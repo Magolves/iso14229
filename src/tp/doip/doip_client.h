@@ -40,7 +40,7 @@ typedef struct {
 } DoIPClient_t;
 
 
-UDSErr_t UDSDoIPInitClient(DoIPClient_t *tp, const char *ipaddress, uint16_t port, uint16_t target_addr);
+UDSErr_t UDSDoIPInitClient(DoIPClient_t *tp, const char *ipaddress, uint16_t port, uint16_t source_addr, uint16_t target_addr);
 void UDSDoIPDeinit(DoIPClient_t *tp);
 
 #endif

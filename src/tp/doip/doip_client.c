@@ -24,31 +24,7 @@
 #include <time.h>
 
 #include "doip_client.h"
-
-
-/* DoIP Client Context */
-typedef struct {
-    int socket_fd;
-    DoIPClientState_t state;
-    UDSTp_t hdl;
-
-    uint16_t source_address;        /* Client logical address */
-    uint16_t target_address;        /* Server logical address */
-
-    char server_ip[64];
-    uint16_t server_port;
-
-    uint8_t rx_buffer[DOIP_BUFFER_SIZE];
-    size_t rx_offset;
-
-    bool diag_ack_received;
-    bool diag_nack_received;
-    uint8_t diag_nack_code;
-
-    /* UDS integration callbacks */
-    void (*on_diag_response)(uint16_t source_addr, const uint8_t *data, size_t len);
-    void *user_data;
-} DoIPClient_t;
+#include "log.h"
 
 /* Static client instance */
 static DoIPClient_t g_client = {0};
@@ -115,7 +91,7 @@ static int doip_send_message(uint16_t payload_type, const uint8_t *payload, uint
  */
 static void doip_handle_routing_activation_response(const uint8_t *payload, uint32_t payload_len) {
     if (payload_len < 9) {
-        printf("DoIP: Invalid routing activation response length\n");
+        UDS_LOGI(__FILE__, "DoIP: Invalid routing activation response length");
         g_client.state = DOIP_STATE_ERROR;
         return;
     }
@@ -123,14 +99,14 @@ static void doip_handle_routing_activation_response(const uint8_t *payload, uint
     uint16_t client_sa = (payload[0] << 8) | payload[1];
     uint16_t server_sa = (payload[2] << 8) | payload[3];
     uint8_t response_code = payload[4];
-    (void)client_sa;  /* Validated implicitly by successful response */
+    (void)client_sa; /* Validated implicitly by successful response */
 
     if (response_code == DOIP_ROUTING_ACTIVATION_RES_SUCCESS) {
         g_client.state = DOIP_STATE_ROUTING_ACTIVATED;
-        printf("DoIP: Routing activated (SA=0x%04X, TA=0x%04X)\n",
-               g_client.source_address, server_sa);
+        UDS_LOGI(__FILE__, "DoIP: Routing activated (SA=0x%04X, TA=0x%04X)",
+                 g_client.source_address, server_sa);
     } else {
-        printf("DoIP: Routing activation failed (code=0x%02X)\n", response_code);
+        UDS_LOGI(__FILE__, "DoIP: Routing activation failed (code=0x%02X)", response_code);
         g_client.state = DOIP_STATE_ERROR;
     }
 }
@@ -144,7 +120,7 @@ static void doip_handle_alive_check_response(const uint8_t *payload, uint32_t pa
     }
 
     uint16_t source_address = (payload[0] << 8) | payload[1];
-    printf("DoIP: Alive check response from 0x%04X\n", source_address);
+    UDS_LOGI(__FILE__, "DoIP: Alive check response from 0x%04X", source_address);
 }
 
 /**
@@ -161,8 +137,8 @@ static void doip_handle_diag_pos_ack(const uint8_t *payload, uint32_t payload_le
 
     g_client.diag_ack_received = true;
 
-    printf("DoIP: Diagnostic message ACK (SA=0x%04X, TA=0x%04X, code=0x%02X)\n",
-           source_address, target_address, ack_code);
+    UDS_LOGI(__FILE__, "DoIP: Diagnostic message ACK (SA=0x%04X, TA=0x%04X, code=0x%02X)",
+             source_address, target_address, ack_code);
 }
 
 /**
@@ -180,8 +156,8 @@ static void doip_handle_diag_neg_ack(const uint8_t *payload, uint32_t payload_le
     g_client.diag_nack_received = true;
     g_client.diag_nack_code = nack_code;
 
-    printf("DoIP: Diagnostic message NACK (SA=0x%04X, TA=0x%04X, code=0x%02X)\n",
-           source_address, target_address, nack_code);
+    UDS_LOGI(__FILE__, "DoIP: Diagnostic message NACK (SA=0x%04X, TA=0x%04X, code=0x%02X)",
+             source_address, target_address, nack_code);
 }
 
 /**
@@ -197,7 +173,8 @@ static void doip_handle_diag_message(const uint8_t *payload, uint32_t payload_le
 
     /* Verify target address matches our logical address */
     if (target_address != g_client.source_address) {
-        printf("DoIP: Received diagnostic message for different TA=0x%04X\n", target_address);
+        UDS_LOGI(__FILE__, "DoIP: Received diagnostic message for different TA=0x%04X",
+                 target_address);
         return;
     }
 
@@ -214,30 +191,54 @@ static void doip_handle_diag_message(const uint8_t *payload, uint32_t payload_le
  */
 static void doip_process_message(const DoIPHeader_t *header, const uint8_t *payload) {
     switch (header->payload_type) {
-        case DOIP_PAYLOAD_TYPE_ROUTING_ACTIVATION_RES:
-            doip_handle_routing_activation_response(payload, header->payload_length);
-            break;
+    case DOIP_PAYLOAD_TYPE_ROUTING_ACTIVATION_RES:
+        doip_handle_routing_activation_response(payload, header->payload_length);
+        break;
 
-        case DOIP_PAYLOAD_TYPE_ALIVE_CHECK_RES:
-            doip_handle_alive_check_response(payload, header->payload_length);
-            break;
+    case DOIP_PAYLOAD_TYPE_ALIVE_CHECK_RES:
+        doip_handle_alive_check_response(payload, header->payload_length);
+        break;
 
-        case DOIP_PAYLOAD_TYPE_DIAG_MESSAGE_POS_ACK:
-            doip_handle_diag_pos_ack(payload, header->payload_length);
-            break;
+    case DOIP_PAYLOAD_TYPE_DIAG_MESSAGE_POS_ACK:
+        doip_handle_diag_pos_ack(payload, header->payload_length);
+        break;
 
-        case DOIP_PAYLOAD_TYPE_DIAG_MESSAGE_NEG_ACK:
-            doip_handle_diag_neg_ack(payload, header->payload_length);
-            break;
+    case DOIP_PAYLOAD_TYPE_DIAG_MESSAGE_NEG_ACK:
+        doip_handle_diag_neg_ack(payload, header->payload_length);
+        break;
 
-        case DOIP_PAYLOAD_TYPE_DIAG_MESSAGE:
-            doip_handle_diag_message(payload, header->payload_length);
-            break;
+    case DOIP_PAYLOAD_TYPE_DIAG_MESSAGE:
+        doip_handle_diag_message(payload, header->payload_length);
+        break;
 
-        default:
-            printf("DoIP: Unknown payload type 0x%04X\n", header->payload_type);
-            break;
+    default:
+        UDS_LOGI(__FILE__, "DoIP: Unknown payload type 0x%04X", header->payload_type);
+        break;
     }
+}
+
+static int doip_poll(int timeout_ms) {
+    fd_set readfds;
+    struct timeval tv;
+
+    FD_ZERO(&readfds);
+    FD_SET(g_client.socket_fd, &readfds);
+
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
+
+    int ret = select(g_client.socket_fd + 1, &readfds, NULL, NULL, &tv);
+    if (ret < 0) {
+        perror("select");
+        return -1;
+    }
+
+    if (ret == 0) {
+        return 0; /* Timeout */
+    }
+
+    ssize_t bytes_read = recv(g_client.socket_fd, g_client.rx_buffer + g_client.rx_offset,
+                              DOIP_BUFFER_SIZE - g_client.rx_offset, 0);
 }
 
 /**
@@ -260,16 +261,15 @@ static int doip_receive_data(int timeout_ms) {
     }
 
     if (ret == 0) {
-        return 0;  /* Timeout */
+        return 0; /* Timeout */
     }
 
-    ssize_t bytes_read = recv(g_client.socket_fd,
-                              g_client.rx_buffer + g_client.rx_offset,
+    ssize_t bytes_read = recv(g_client.socket_fd, g_client.rx_buffer + g_client.rx_offset,
                               DOIP_BUFFER_SIZE - g_client.rx_offset, 0);
 
     if (bytes_read <= 0) {
         if (bytes_read == 0) {
-            printf("DoIP: Server disconnected\n");
+            UDS_LOGI(__FILE__, "DoIP: Server disconnected");
         } else {
             perror("recv");
         }
@@ -283,7 +283,7 @@ static int doip_receive_data(int timeout_ms) {
     while (g_client.rx_offset >= DOIP_HEADER_SIZE) {
         DoIPHeader_t header;
         if (!doip_header_parse(g_client.rx_buffer, &header)) {
-            printf("DoIP: Invalid header\n");
+            UDS_LOGI(__FILE__, "DoIP: Invalid header");
             g_client.state = DOIP_STATE_ERROR;
             return -1;
         }
@@ -301,9 +301,8 @@ static int doip_receive_data(int timeout_ms) {
 
         /* Remove processed message from buffer */
         if (g_client.rx_offset > total_msg_size) {
-            memmove(g_client.rx_buffer,
-                   g_client.rx_buffer + total_msg_size,
-                   g_client.rx_offset - total_msg_size);
+            memmove(g_client.rx_buffer, g_client.rx_buffer + total_msg_size,
+                    g_client.rx_offset - total_msg_size);
         }
         g_client.rx_offset -= total_msg_size;
     }
@@ -315,7 +314,7 @@ static int doip_receive_data(int timeout_ms) {
  * @brief Initialize DoIP client
  */
 int doip_client_init(uint16_t source_address,
-                     void (*diag_response_callback)(uint16_t, const uint8_t*, size_t)) {
+                     void (*diag_response_callback)(uint16_t, const uint8_t *, size_t)) {
     memset(&g_client, 0, sizeof(DoIPClient_t));
 
     g_client.socket_fd = -1;
@@ -323,7 +322,7 @@ int doip_client_init(uint16_t source_address,
     g_client.source_address = source_address;
     g_client.on_diag_response = diag_response_callback;
 
-    printf("DoIP Client: Initialized (SA=0x%04X)\n", source_address);
+    UDS_LOGI(__FILE__, "DoIP Client: Initialized (SA=0x%04X)", source_address);
 
     return 0;
 }
@@ -333,7 +332,7 @@ int doip_client_init(uint16_t source_address,
  */
 int doip_client_connect(const char *server_ip, uint16_t target_address) {
     if (g_client.state != DOIP_STATE_DISCONNECTED) {
-        printf("DoIP: Already connected or in error state\n");
+        UDS_LOGI(__FILE__, "DoIP: Already connected or in error state");
         return -1;
     }
 
@@ -357,7 +356,7 @@ int doip_client_connect(const char *server_ip, uint16_t target_address) {
     server_addr.sin_port = htons(DOIP_TCP_PORT);
 
     if (inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0) {
-        printf("DoIP: Invalid server IP address\n");
+        UDS_LOGI(__FILE__, "DoIP: Invalid server IP address");
         close(g_client.socket_fd);
         return -1;
     }
@@ -372,7 +371,7 @@ int doip_client_connect(const char *server_ip, uint16_t target_address) {
     g_client.target_address = target_address;
     g_client.state = DOIP_STATE_CONNECTED;
 
-    printf("DoIP Client: Connected to %s:%d\n", server_ip, DOIP_TCP_PORT);
+    UDS_LOGI(__FILE__, "DoIP Client: Connected to %s:%d", server_ip, DOIP_TCP_PORT);
 
     return 0;
 }
@@ -382,7 +381,7 @@ int doip_client_connect(const char *server_ip, uint16_t target_address) {
  */
 int doip_client_activate_routing(void) {
     if (g_client.state != DOIP_STATE_CONNECTED) {
-        printf("DoIP: Not connected\n");
+        UDS_LOGI(__FILE__, "DoIP: Not connected");
         return -1;
     }
 
@@ -391,7 +390,7 @@ int doip_client_activate_routing(void) {
     payload[0] = (g_client.source_address >> 8) & 0xFF;
     payload[1] = g_client.source_address & 0xFF;
     payload[2] = DOIP_ROUTING_ACTIVATION_TYPE;
-    payload[3] = 0x00;  /* Reserved */
+    payload[3] = 0x00; /* Reserved */
     payload[4] = 0x00;
     payload[5] = 0x00;
     payload[6] = 0x00;
@@ -417,7 +416,7 @@ int doip_client_activate_routing(void) {
         int remaining_ms = timeout_ms - elapsed_ms;
 
         if (remaining_ms <= 0) {
-            printf("DoIP: Routing activation timeout\n");
+            UDS_LOGI(__FILE__, "DoIP: Routing activation timeout");
             g_client.state = DOIP_STATE_ERROR;
             return -1;
         }
@@ -428,7 +427,7 @@ int doip_client_activate_routing(void) {
     }
 
     if (g_client.state != DOIP_STATE_ROUTING_ACTIVATED) {
-        printf("DoIP: Routing activation failed\n");
+        UDS_LOGI(__FILE__, "DoIP: Routing activation failed");
         return -1;
     }
 
@@ -440,14 +439,14 @@ int doip_client_activate_routing(void) {
  */
 int doip_client_send_diag_message(const uint8_t *data, size_t len) {
     if (g_client.state != DOIP_STATE_ROUTING_ACTIVATED) {
-        printf("DoIP: Routing not activated\n");
+        UDS_LOGI(__FILE__, "DoIP: Routing not activated");
         return -1;
     }
 
     /* Build diagnostic message payload */
     uint8_t payload[DOIP_BUFFER_SIZE];
     if (len + 4 > DOIP_BUFFER_SIZE) {
-        printf("DoIP: Message too large\n");
+        UDS_LOGI(__FILE__, "DoIP: Message too large");
         return -1;
     }
 
@@ -466,7 +465,7 @@ int doip_client_send_diag_message(const uint8_t *data, size_t len) {
     }
 
     /* Wait for ACK/NACK */
-    int timeout_ms = 1000;  /* 1 second for ACK */
+    int timeout_ms = 1000; /* 1 second for ACK */
     clock_t start = clock();
 
     while (!g_client.diag_ack_received && !g_client.diag_nack_received) {
@@ -474,7 +473,7 @@ int doip_client_send_diag_message(const uint8_t *data, size_t len) {
         int remaining_ms = timeout_ms - elapsed_ms;
 
         if (remaining_ms <= 0) {
-            printf("DoIP: Diagnostic message ACK timeout\n");
+            UDS_LOGI(__FILE__, "DoIP: Diagnostic message ACK timeout");
             return -1;
         }
 
@@ -484,8 +483,8 @@ int doip_client_send_diag_message(const uint8_t *data, size_t len) {
     }
 
     if (g_client.diag_nack_received) {
-        printf("DoIP: Diagnostic message rejected (NACK code=0x%02X)\n",
-               g_client.diag_nack_code);
+        UDS_LOGI(__FILE__, "DoIP: Diagnostic message rejected (NACK code=0x%02X)",
+                 g_client.diag_nack_code);
         return -1;
     }
 
@@ -506,7 +505,7 @@ void doip_client_process(int timeout_ms) {
  */
 int doip_client_send_alive_check(void) {
     if (g_client.state != DOIP_STATE_ROUTING_ACTIVATED) {
-        printf("DoIP: Not in activated state\n");
+        UDS_LOGI(__FILE__, "DoIP: Not in activated state");
         return -1;
     }
 
@@ -516,26 +515,86 @@ int doip_client_send_alive_check(void) {
 /**
  * @brief Disconnect from DoIP server
  */
-void doip_client_disconnect(void) {
-    if (g_client.socket_fd >= 0) {
-        close(g_client.socket_fd);
-        g_client.socket_fd = -1;
+void doip_client_disconnect(DoIPClient_t *tp) {
+    if (tp->socket_fd >= 0) {
+        close(tp->socket_fd);
+        tp->socket_fd = -1;
     }
 
-    g_client.state = DOIP_STATE_DISCONNECTED;
-    g_client.rx_offset = 0;
-
-    printf("DoIP Client: Disconnected\n");
+    tp->state = DOIP_STATE_DISCONNECTED;
+    tp->rx_offset = 0;
+    UDS_LOGI(__FILE__, "DoIP Client: Disconnected");
 }
 
 /**
  * @brief Get client state
  */
-DoIPClientState_t doip_client_get_state(void) {
-    return g_client.state;
+DoIPClientState_t doip_client_get_state(void) { return g_client.state; }
+
+////  FUNCTIONS FOR UDS INTERFACE ////
+
+static ssize_t doip_tp_send(UDSTp_t *hdl, uint8_t *buf, size_t len, UDSSDU_t *info) {
+    UDS_ASSERT(hdl);
+    ssize_t ret = -1;
+    DoIPClient_t *impl = (DoIPClient_t *)hdl;
 }
 
-UDSErr_t UDSDoIPInitClient(DoIPClient_t *tp, const char *ipaddress, uint16_t port, uint16_t target_addr);
-void UDSDoIPDeinit(DoIPClient_t *tp);
+static ssize_t  doip_tp_recv(UDSTp_t *hdl, uint8_t *buf, size_t bufsize, UDSSDU_t *info) {
+    UDS_ASSERT(hdl);
+    UDS_ASSERT(buf);
+    ssize_t ret = 0;
+    DoIPClient_t *impl = (DoIPClient_t *)hdl;
+}
 
-#endif  /* UDS_TP_DOIP */
+/**
+ * @brief Poll DoIP transport layer status
+ * @note Checks if the transport layer is ready to send/receive
+ * @return UDS_TP_IDLE if idle, otherwise UDS_TP_SEND_IN_PROGRESS or UDS_TP_RECV_COMPLETE
+ */
+static UDSTpStatus_t doip_tp_poll(UDSTp_t *hdl) {
+    UDS_ASSERT(hdl);
+    UDSTpStatus_t status = 0;
+    DoIPClient_t *impl = (DoIPClient_t *)hdl;
+    if (impl->state != DOIP_STATE_ROUTING_ACTIVATED) {
+        status |= UDS_TP_ERR;
+    }
+
+    return status;
+}
+
+UDSErr_t UDSDoIPInitClient(DoIPClient_t *tp, const char *ipaddress, uint16_t port,
+                           uint16_t source_addr, uint16_t target_addr) {
+    if (!tp || !ipaddress) {
+        return UDS_ERR_INVALID_ARG;
+    }
+
+    memset(tp, 0, sizeof(DoIPClient_t));
+
+    tp->socket_fd = -1;
+    tp->state = DOIP_STATE_DISCONNECTED;
+    tp->source_address = source_addr;
+    tp->target_address = target_addr;
+    strncpy(tp->server_ip, ipaddress, sizeof(tp->server_ip) - 1);
+    tp->server_port = port;
+
+    tp->hdl.send = doip_tp_send;
+    tp->hdl.recv = doip_tp_recv;
+    tp->hdl.poll = doip_tp_poll;
+
+    UDS_LOGI(__FILE__, "UDS DoIP Client: Initialized (SA=0x%04X, TA=0x%04X)", tp->source_address,
+             tp->target_address);
+
+    return UDS_OK;
+}
+
+void UDSDoIPActivateRouting(DoIPClient_t *tp);
+
+void UDSDoIPDeinit(DoIPClient_t *tp) {
+    if (!tp) {
+        return;
+    }
+
+    doip_client_disconnect(tp);
+}
+
+#endif /* UDS_TP_DOIP */

@@ -31,10 +31,10 @@
 #define DOIP_DIAG_NACK_TARGET_UNREACHABLE           0x06
 
 /* Configuration */
-#define DOIP_MAX_CLIENTS                8
 #define DOIP_BUFFER_SIZE                4096
-#define DOIP_LOGICAL_ADDRESS_SERVER     0x0001
 #define DOIP_ROUTING_ACTIVATION_TYPE    0x00
+#define DOIP_DEFAULT_TIMEOUT_MS         5000
+
 
 /* DoIP Header Structure */
 typedef struct {
