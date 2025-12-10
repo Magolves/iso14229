@@ -3,6 +3,7 @@
 #pragma once
 #include "tp.h"
 #include "uds.h"
+#include "doip_defines.h"
 
 
 /* DoIP Client State */
@@ -17,6 +18,7 @@ typedef enum {
 /* DoIP Client Context */
 typedef struct {
     int socket_fd;
+    UDSTp_t hdl;
     DoIPClientState_t state;
 
     uint16_t source_address;        /* Client logical address */
@@ -38,8 +40,7 @@ typedef struct {
 } DoIPClient_t;
 
 
-UDSErr_t UDSDoIPInitClient(DoIPClient_t *tp, const char *ifname, uint32_t source_addr,
-                                  uint32_t target_addr, uint32_t target_addr_func);
+UDSErr_t UDSDoIPInitClient(DoIPClient_t *tp, const char *ipaddress, uint16_t port, uint16_t target_addr);
 void UDSDoIPDeinit(DoIPClient_t *tp);
 
 #endif
