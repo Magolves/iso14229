@@ -33,7 +33,7 @@ int main(int ac, char **av) {
     UDSClient_t client;
     DoIPClient_t tp;
 
-    UDSErr_t result = UDSDoIPInitClient(&tp, "127.0.0.1", 13400, 0x1234, 0x5678);
+    UDSErr_t result = UDSDoIPInitClient(&tp, "127.0.0.1", 13400, 0x1234, 0x0001);
     if (result != UDS_OK) {
         UDS_LOGE(__FILE__, "DoIP Client: UDSDoIPInitClient failed with error %d", result);
         UDSDoIPDeinit(&tp);
@@ -51,6 +51,13 @@ int main(int ac, char **av) {
 
     UDSClientPoll(&client);
     UDSSendRDBI(&client, (uint16_t[]){0xF190, 0xF191}, 2);
+
+    int ms = 100;
+    for (int i = 0; i < 100; i++) {
+        UDSClientPoll(&client);
+        // Simulate a delay of 100 ms between polls
+        nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = ms * 1000000}, NULL);
+    }
 
     UDSDoIPDeinit(&tp);
     return EXIT_SUCCESS;

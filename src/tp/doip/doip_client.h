@@ -20,7 +20,7 @@ typedef enum {
 
 /* DoIP Client Context */
 typedef struct {
-    UDSTp_t hdl;
+    UDSTp_t hdl;    /* Must be the first entry! */
     int socket_fd;
     DoIPClientState_t state;
 
