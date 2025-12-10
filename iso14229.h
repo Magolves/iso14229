@@ -1818,13 +1818,16 @@ typedef enum {
     DOIP_STATE_CONNECTED,
     DOIP_STATE_ROUTING_ACTIVATION_PENDING,
     DOIP_STATE_ROUTING_ACTIVATED,
+    // Diag message states for tracking ACK/NACK and responses
+    DOIP_STATE_DIAG_MESSAGE_ACK_PENDING,
+    DOIP_STATE_DIAG_MESSAGE_RESPONSE_PENDING,
     DOIP_STATE_ERROR
 } DoIPClientState_t;
 
 /* DoIP Client Context */
 typedef struct {
-    int socket_fd;
     UDSTp_t hdl;
+    int socket_fd;
     DoIPClientState_t state;
 
     uint16_t source_address;        /* Client logical address */
@@ -1839,10 +1842,6 @@ typedef struct {
     bool diag_ack_received;
     bool diag_nack_received;
     uint8_t diag_nack_code;
-
-    /* UDS integration callbacks */
-    void (*on_diag_response)(uint16_t source_addr, const uint8_t *data, size_t len);
-    void *user_data;
 } DoIPClient_t;
 
 
