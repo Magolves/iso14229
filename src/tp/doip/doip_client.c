@@ -534,15 +534,68 @@ static UDSTpStatus_t doip_tp_poll(UDSTp_t *hdl) {
         status |= UDS_TP_ERR;
     }
 
-    if (impl->state == DOIP_STATE_DIAG_MESSAGE_ACK_PENDING) {
-        status |= UDS_TP_SEND_IN_PROGRESS;
-    } else if (impl->state == DOIP_STATE_DIAG_MESSAGE_RESPONSE_PENDING) {
-        status |= UDS_TP_SEND_IN_PROGRESS;
-    } else {
-        status |= UDS_TP_IDLE;
-    }
+    // if (impl->state == DOIP_STATE_DIAG_MESSAGE_ACK_PENDING) {
+    //     status |= UDS_TP_SEND_IN_PROGRESS;
+    // } else if (impl->state == DOIP_STATE_DIAG_MESSAGE_RESPONSE_PENDING) {
+    //     status |= UDS_TP_SEND_IN_PROGRESS;
+    // } else {
+    //     status |= UDS_TP_IDLE;
+    // }
 
-    UDS_LOGI(__FILE__, "DoIP TP Poll: state=%d, status=0x%02X", impl->state, status);
+    // UDS_LOGI(__FILE__, "DoIP TP Poll: state=%d, status=0x%02X", impl->state, status);
+
+    // Took code from isotp_sock_tp_poll() as a template
+    int fds[1] = {impl->socket_fd};
+    struct pollfd pfds[1] = {0};
+    pfds[0].fd = impl->socket_fd;
+    pfds[0].events = POLLERR | POLLOUT;
+    pfds[0].revents = 0;
+
+    ret = poll(pfds, 1, 1);
+    if (ret < 0) {
+        UDS_LOGE(__FILE__, "poll failed: %d", ret);
+        status |= UDS_TP_ERR;
+    } else if (ret == 0) {
+        ; // timeout, no events
+    } else {
+        // poll() returned with events
+        for (int i = 0; i < 2; i++) {
+            struct pollfd pfd = pfds[i];
+
+            // Check for errors
+            if (pfd.revents & POLLERR) {
+                int pending_err = 0;
+                socklen_t len = sizeof(pending_err);
+                if (!getsockopt(fds[i], SOL_SOCKET, SO_ERROR, &pending_err, &len) && pending_err) {
+                    switch (pending_err) {
+                    case ECOMM:
+                        UDS_LOGE(__FILE__, "ECOMM: Communication error on send");
+                        status |= UDS_TP_ERR;
+                        break;
+                    default:
+                        UDS_LOGE(__FILE__, "Asynchronous socket error: %s (%d)",
+                                 strerror(pending_err), pending_err);
+                        status |= UDS_TP_ERR;
+                        break;
+                    }
+                } else {
+                    UDS_LOGE(__FILE__, "POLLERR was set, but no error returned via SO_ERROR?");
+                }
+            }
+
+            // Check if send is in progress on physical socket
+            // Only check the physical socket (not functional) since that's what sends multi-frame
+            if (fds[i] == impl->phys_fd && pfd.revents != 0) {
+                // When POLLOUT is NOT set but other events are present, the socket cannot accept
+                // writes because a multi-frame transmission is in progress.
+                // See: https://lore.kernel.org/all/20230331125511.372783-1-michal.sojka@cvut.cz/
+                // The kernel ISO-TP driver suppresses POLLOUT when tx.state != ISOTP_IDLE
+                if (!(pfd.revents & POLLOUT)) {
+                    status |= UDS_TP_SEND_IN_PROGRESS;
+                }
+            }
+        }
+    }
 
     return status;
 }
