@@ -1691,8 +1691,6 @@ typedef struct {
     char tag[16];
 } UDSTpIsoTpSock_t;
 
-
-
 UDSErr_t UDSTpIsoTpSockInitServer(UDSTpIsoTpSock_t *tp, const char *ifname, uint32_t source_addr,
                                   uint32_t target_addr, uint32_t source_addr_func);
 UDSErr_t UDSTpIsoTpSockInitClient(UDSTpIsoTpSock_t *tp, const char *ifname, uint32_t source_addr,
@@ -1823,6 +1821,7 @@ typedef enum {
     DOIP_STATE_ROUTING_ACTIVATION_PENDING,
     DOIP_STATE_READY_FOR_DIAG_REQUEST,
     // Diag message states for tracking ACK/NACK and responses
+    DOIP_STATE_DIAG_MESSAGE_SEND_PENDING,
     DOIP_STATE_DIAG_MESSAGE_ACK_PENDING,
     DOIP_STATE_DIAG_MESSAGE_RESPONSE_PENDING,
     DOIP_STATE_ERROR

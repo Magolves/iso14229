@@ -97,6 +97,8 @@ UDSErr_t fn(UDSClient_t *client, UDSEvent_t evt, void *ev_data) {
 
 
 int main(int ac, char **av) {
+    (void)ac;
+    (void)av;
     UDSClient_t client;
     DoIPClient_t tp;
 
@@ -123,6 +125,13 @@ int main(int ac, char **av) {
     while (ctx.step != Step_DONE) {
         UDSClientPoll(&client);
     }
+
+#ifdef KEEP_ALIVE_CHECK
+    // poll forver to cause keep-alive checks from server
+    while (true) {
+        UDSClientPoll(&client);
+    }
+#endif
 
     return ctx.err;
 }

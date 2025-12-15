@@ -22,12 +22,12 @@
 
 #include "doip_server.h"
 
-static volatile int g_running = 1;
+static volatile int server_running = 1;
 
 void signal_handler(int signum) {
     (void)signum;  /* Unused parameter */
     printf("\nShutdown signal received\n");
-    g_running = 0;
+    server_running = 0;
 }
 
 
@@ -123,7 +123,7 @@ int main(void) {
     printf("Server running. Press Ctrl+C to stop.\n\n");
 
     /* Main loop */
-    while (g_running) {
+    while (server_running) {
         doip_server_process(100);  /* 100ms timeout */
     }
 

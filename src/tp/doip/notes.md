@@ -49,6 +49,13 @@ make
   - < 0: error
   - n: message sent
 
+- poll: one of
+    UDS_TP_IDLE = 0x0000, // ready to send/recv
+    UDS_TP_SEND_IN_PROGRESS = 0x0001,// sending not complete
+
+    UDS_TP_RECV_COMPLETE = 0x0002,// recv finished (not used/needed?)
+    UDS_TP_ERR = 0x0004,
+
 
 ```C
 tp_status = UDSTpPoll(client->tp);
