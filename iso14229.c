@@ -4500,7 +4500,14 @@ UDSErr_t UDSDoIPInitClient(DoIPClient_t *tp, const char *ipaddress, uint16_t por
     doip_change_state(tp, DOIP_STATE_DISCONNECTED);
     tp->source_address = source_addr;
     tp->target_address = target_addr;
+
+    // use strncpy to avoid buffer overflow and ensure null-termination
+    tp->server_ip[sizeof(tp->server_ip) - 1] = '\0';
     strncpy(tp->server_ip, ipaddress, sizeof(tp->server_ip) - 1);
+    if (tp->server_ip[0] == '\0') {
+        UDS_LOGE(__FILE__, "UDS DoIP Client: Invalid server IP address");
+        return UDS_ERR_INVALID_ARG;
+    }
     tp->server_port = port;
 
     tp->hdl.send = doip_tp_send;

@@ -102,7 +102,15 @@ int main(int ac, char **av) {
     UDSClient_t client;
     DoIPClient_t tp;
 
-    UDSErr_t result = UDSDoIPInitClient(&tp, "127.0.0.1", 13400, 0x1234, 0x0001);
+    // Check for invalid IP address length
+    UDSErr_t result = UDSDoIPInitClient(&tp, "1234567890123456789012345678901234567890123456789012345678901234 ", 13400, 0x1234, 0x0001);
+    if (result == UDS_OK) {
+        UDS_LOGE(__FILE__, "DoIP Client: UDSDoIPInitClient should have failed with invalid IP address");
+        UDSDoIPDeinit(&tp);
+        exit(-1);
+    }
+
+    result = UDSDoIPInitClient(&tp, "127.0.0.1", 13400, 0x1234, 0x0001);
     if (result != UDS_OK) {
         UDS_LOGE(__FILE__, "DoIP Client: UDSDoIPInitClient failed with error %d", result);
         UDSDoIPDeinit(&tp);

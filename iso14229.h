@@ -1854,8 +1854,23 @@ typedef struct {
     uint8_t diag_nack_code;
 } DoIPClient_t;
 
-
+/**
+ * @brief Initialize DoIP client transport layer
+ *
+ * @param tp Pointer to DoIP client context
+ * @param ipaddress Server IP address as a string
+ * @param port Server port number
+ * @param source_addr Client logical address (range 0x0E00 - 0x0FFF)
+ * @param target_addr Server logical address
+ * @return UDSErr_t UDS_OK on success, error code otherwise
+ */
 UDSErr_t UDSDoIPInitClient(DoIPClient_t *tp, const char *ipaddress, uint16_t port, uint16_t source_addr, uint16_t target_addr);
+
+/**
+ * @brief Deinitialize DoIP client transport layer
+ *
+ * @param tp Pointer to DoIP client context
+ */
 void UDSDoIPDeinit(DoIPClient_t *tp);
 
 #endif
