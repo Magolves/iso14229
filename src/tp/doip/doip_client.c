@@ -127,7 +127,7 @@ static bool doip_header_parse(const uint8_t *buffer, DoIPHeader_t *header) {
  * @param payload_len Length of DoIP payload
  * @return int Number of payload bytes sent, or -1 on error
  */
-static int doip_send_message(DoIPClient_t *tp, uint16_t payload_type, const uint8_t *payload,
+static int doip_send_message(const DoIPClient_t *tp, uint16_t payload_type, const uint8_t *payload,
                              uint32_t payload_len) {
     uint8_t buffer[DOIP_BUFFER_SIZE];
     DoIPHeader_t *header = (DoIPHeader_t *)buffer;
@@ -633,7 +633,7 @@ void doip_update_sdu_info(const UDSTp_t *hdl, UDSSDU_t *info) {
         return;
     }
 
-    DoIPClient_t *impl = (DoIPClient_t *)hdl;
+    const DoIPClient_t *impl = (DoIPClient_t *)hdl;
     info->A_Mtype = UDS_A_MTYPE_DIAG;
     info->A_SA = impl->source_address;
     info->A_TA = impl->target_address;
@@ -781,9 +781,8 @@ UDSErr_t UDSDoIPInitClient(DoIPClient_t *tp, const char *ipaddress, uint16_t por
     tp->source_address = source_addr;
     tp->target_address = target_addr;
 
-    // use strncpy to avoid buffer overflow and ensure null-termination
-    tp->server_ip[sizeof(tp->server_ip) - 1] = '\0';
-    strncpy(tp->server_ip, ipaddress, sizeof(tp->server_ip) - 1);
+    /* Copy server IP address with guaranteed null-termination */
+    snprintf(tp->server_ip, sizeof(tp->server_ip), "%s", ipaddress);
     if (tp->server_ip[0] == '\0') {
         UDS_LOGE(__FILE__, "UDS DoIP Client: Invalid server IP address");
         return UDS_ERR_INVALID_ARG;
