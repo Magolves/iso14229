@@ -3750,7 +3750,10 @@ void ISOTPMockFree(UDSTp_t *tp) {
 #define DOIP_ADDRESS(a, off) ((uint16_t)(((a[(off)]) << 8) | (a[(off) + 1])))
 
 /**
- * @brief Create and initialize DoIP header
+ * @brief Initialize DoIP header
+ * @param header Pointer to DoIPHeader_t structure to initialize
+ * @param payload_type DoIP payload type
+ * @param payload_length Length of DoIP payload
  */
 static void doip_header_init(DoIPHeader_t *header, uint16_t payload_type, uint32_t payload_length) {
     header->protocol_version = DOIP_PROTOCOL_VERSION;
@@ -3759,33 +3762,43 @@ static void doip_header_init(DoIPHeader_t *header, uint16_t payload_type, uint32
     header->payload_length = htonl(payload_length);
 }
 
-const char* doip_client_state_to_string(DoIPClientState_t state) {
+/**
+ * @brief Convert DoIP client state to string.
+ *
+ * @param state the state to convert
+ * @return const char* the string representation of the state
+ */
+const char *doip_client_state_to_string(DoIPClientState_t state) {
     switch (state) {
-        case DOIP_STATE_DISCONNECTED:
-            return "DISCONNECTED";
-        case DOIP_STATE_CONNECTED:
-            return "CONNECTED";
-        case DOIP_STATE_ROUTING_ACTIVATION_PENDING:
-            return "ROUTING_ACTIVATION_PENDING";
-        case DOIP_STATE_READY_FOR_DIAG_REQUEST:
-            return "READY";
-        case DOIP_STATE_DIAG_MESSAGE_ACK_PENDING:
-            return "ACK_PENDING";
-        case DOIP_STATE_DIAG_MESSAGE_RESPONSE_PENDING:
-            return "RESPONSE_PENDING";
-        case DOIP_STATE_ERROR:
-            return "ERROR";
-        default:
-            return "UNKNOWN_STATE";
+    case DOIP_STATE_DISCONNECTED:
+        return "DISCONNECTED";
+    case DOIP_STATE_CONNECTED:
+        return "CONNECTED";
+    case DOIP_STATE_ROUTING_ACTIVATION_PENDING:
+        return "ROUTING_ACTIVATION_PENDING";
+    case DOIP_STATE_READY_FOR_DIAG_REQUEST:
+        return "READY";
+    case DOIP_STATE_DIAG_MESSAGE_ACK_PENDING:
+        return "ACK_PENDING";
+    case DOIP_STATE_DIAG_MESSAGE_RESPONSE_PENDING:
+        return "RESPONSE_PENDING";
+    case DOIP_STATE_ERROR:
+        return "ERROR";
+    default:
+        return "UNKNOWN_STATE";
     }
 }
 
-
-#define doip_change_state(t,s) {\
-    if (_doip_change_state((t),(s))) {\
-        UDS_LOGI(__FILE__, "DoIP: State change to %s (line %d)", doip_client_state_to_string(s), __LINE__);\
-    }\
-}
+/**
+ * @brief Helper macro to change DoIP client state with logging.
+ */
+#define doip_change_state(t, s)                                                                    \
+    {                                                                                              \
+        if (_doip_change_state((t), (s))) {                                                        \
+            UDS_LOGV(__FILE__, "DoIP: State change to %s (line %d)",                               \
+                     doip_client_state_to_string(s), __LINE__);                                    \
+        }                                                                                          \
+    }
 
 /**
  * @brief Change DoIP client state
@@ -3797,22 +3810,25 @@ static bool _doip_change_state(DoIPClient_t *tp, DoIPClientState_t new_state) {
     if (tp->state == new_state)
         return false;
 
-    //UDS_LOGI(__FILE__, "DoIP: State change %d -> %d", tp->state, new_state);
+    // UDS_LOGI(__FILE__, "DoIP: State change %d -> %d", tp->state, new_state);
     tp->state = new_state;
     return true;
 }
 
 /**
  * @brief Parse DoIP header from buffer
+ * @param buffer Pointer to buffer containing DoIP header
+ * @param header Pointer to DoIPHeader_t structure to fill
  */
 static bool doip_header_parse(const uint8_t *buffer, DoIPHeader_t *header) {
-    if (!buffer || !header) {
+    if (NULL == buffer || NULL == header) {
         return false;
     }
 
-    memcpy(header, buffer, sizeof(DoIPHeader_t));
-    header->payload_type = ntohs(header->payload_type);
-    header->payload_length = ntohl(header->payload_length);
+    header->protocol_version = buffer[0];
+    header->protocol_version_inv = buffer[1];
+    header->payload_type = buffer[2] << 8 | buffer[3];
+    header->payload_length = buffer[4] << 24 | buffer[5] << 16 | buffer[6] << 8 | buffer[7];
 
     /* Validate protocol version */
     if (header->protocol_version != DOIP_PROTOCOL_VERSION ||
@@ -3824,7 +3840,12 @@ static bool doip_header_parse(const uint8_t *buffer, DoIPHeader_t *header) {
 }
 
 /**
- * @brief Send DoIP message
+ * @brief Send DoIP message.
+ * @param tp DoIP client context
+ * @param payload_type DoIP payload type
+ * @param payload Pointer to DoIP payload
+ * @param payload_len Length of DoIP payload
+ * @return int Number of payload bytes sent, or -1 on error
  */
 static int doip_send_message(DoIPClient_t *tp, uint16_t payload_type, const uint8_t *payload,
                              uint32_t payload_len) {
@@ -3847,7 +3868,9 @@ static int doip_send_message(DoIPClient_t *tp, uint16_t payload_type, const uint
         return -1;
     }
 
-    return sent - DOIP_HEADER_SIZE - DOIP_DIAG_HEADER_SIZE; /* Return number of payload bytes sent */
+    /* Return number of UDS payload bytes sent (strip headers) */
+    return sent - DOIP_HEADER_SIZE -
+           DOIP_DIAG_HEADER_SIZE;
 }
 
 /**
@@ -3863,7 +3886,7 @@ void doip_store_uds_response(DoIPClient_t *tp, const uint8_t *data, size_t len) 
         return;
     }
 
-    /* Store UDS response data in separate buffer for doip_tp_recv to retrieve */
+    // Store UDS response data in separate buffer for doip_tp_recv to retrieve
     if (len > DOIP_DIAG_HEADER_SIZE) {
         uint16_t sa = DOIP_ADDRESS(data, 0);
 
@@ -3885,6 +3908,9 @@ void doip_store_uds_response(DoIPClient_t *tp, const uint8_t *data, size_t len) 
 
 /**
  * @brief Handle routing activation response
+ * @param tp DoIP client context
+ * @param payload Pointer to DoIP payload
+ * @param payload_len Length of DoIP payload
  */
 static void doip_handle_routing_activation_response(DoIPClient_t *tp, const uint8_t *payload,
                                                     uint32_t payload_len) {
@@ -3910,18 +3936,22 @@ static void doip_handle_routing_activation_response(DoIPClient_t *tp, const uint
 }
 
 /**
- * @brief Handle alive check response
+ * @brief Sends alive check response when (DoIP) server requests it.
+ * @param tp DoIP client context
+ * @param payload Pointer to DoIP payload
+ * @param payload_len Length of DoIP payload
  */
 static void doip_handle_alive_check_request(DoIPClient_t *tp, const uint8_t *payload,
-                                             uint32_t payload_len) {
+                                            uint32_t payload_len) {
 
     (void)tp;
-    // alive check request payload is empty
+    (void)payload;
+    (void)payload_len;
 
-    uint8_t response[11];
+    // alive check request payload is empty, the response contains the client's source address
+    uint8_t response[2];
     response[0] = (tp->source_address >> 8) & 0xFF;
     response[1] = tp->source_address & 0xFF;
-
 
     UDS_LOGI(__FILE__, "DoIP: Alive check request -> response from 0x%04X", tp->source_address);
     int sent = doip_send_message(tp, DOIP_PAYLOAD_TYPE_ALIVE_CHECK_RES, response, sizeof(response));
@@ -3933,7 +3963,10 @@ static void doip_handle_alive_check_request(DoIPClient_t *tp, const uint8_t *pay
 }
 
 /**
- * @brief Handle diagnostic message positive ACK
+ * @brief Handle diagnostic message positive ACK.
+ * @param tp DoIP client context
+ * @param payload Pointer to DoIP payload
+ * @param payload_len Length of DoIP payload
  */
 static void doip_handle_diag_pos_ack(DoIPClient_t *tp, const uint8_t *payload,
                                      uint32_t payload_len) {
@@ -3952,7 +3985,10 @@ static void doip_handle_diag_pos_ack(DoIPClient_t *tp, const uint8_t *payload,
 }
 
 /**
- * @brief Handle diagnostic message negative ACK
+ * @brief Handle diagnostic message negative ACK.
+ * @param tp DoIP client context
+ * @param payload Pointer to DoIP payload
+ * @param payload_len Length of DoIP payload
  */
 static void doip_handle_diag_neg_ack(DoIPClient_t *tp, const uint8_t *payload,
                                      uint32_t payload_len) {
@@ -3972,7 +4008,10 @@ static void doip_handle_diag_neg_ack(DoIPClient_t *tp, const uint8_t *payload,
 }
 
 /**
- * @brief Handle diagnostic message (response from server)
+ * @brief Handle diagnostic message (response from server).
+ * @param tp DoIP client context
+ * @param payload Pointer to DoIP payload
+ * @param payload_len Length of DoIP payload
  */
 static void doip_handle_diag_message(DoIPClient_t *tp, const uint8_t *payload,
                                      uint32_t payload_len) {
@@ -4006,7 +4045,7 @@ static void doip_process_message(DoIPClient_t *tp, const DoIPHeader_t *header,
         doip_handle_routing_activation_response(tp, payload, header->payload_length);
         break;
 
-    case DOIP_PAYLOAD_TYPE_ALIVE_CHECK_REQ: // TODO: must be a request!
+    case DOIP_PAYLOAD_TYPE_ALIVE_CHECK_REQ:
         doip_handle_alive_check_request(tp, payload, header->payload_length);
         break;
 
@@ -4067,7 +4106,6 @@ static ssize_t doip_receive_data(DoIPClient_t *tp, int timeout_ms) {
     }
 
     UDS_LOGI(__FILE__, "DoIP: Received %zd bytes", bytes_read);
-    UDS_LOG_SDU(__FILE__, tp->rx_buffer + tp->rx_offset, bytes_read, NULL);
 
     tp->rx_offset += bytes_read;
     /* Process complete DoIP messages */
@@ -4088,8 +4126,8 @@ static ssize_t doip_receive_data(DoIPClient_t *tp, int timeout_ms) {
 
         /* Process message */
         const uint8_t *payload = tp->rx_buffer + DOIP_HEADER_SIZE;
-        UDS_LOGI(__FILE__, "DoIP: Processing message type 0x%04X, length %u",
-                 header.payload_type, header.payload_length);
+        UDS_LOGI(__FILE__, "DoIP: Processing message type 0x%04X, length %u", header.payload_type,
+                 header.payload_length);
         UDS_LOG_SDU(__FILE__, payload, header.payload_length, NULL);
         doip_process_message(tp, &header, payload);
 
@@ -4105,6 +4143,7 @@ static ssize_t doip_receive_data(DoIPClient_t *tp, int timeout_ms) {
 
 /**
  * @brief Connect to DoIP server
+ * @param tp DoIP client context
  */
 int doip_client_connect(DoIPClient_t *tp) {
     if (tp->state != DOIP_STATE_DISCONNECTED) {
@@ -4152,7 +4191,8 @@ int doip_client_connect(DoIPClient_t *tp) {
 }
 
 /**
- * @brief Activate routing
+ * @brief Activate routing. Sends a "routing activation" request to the server.
+ * @param tp DoIP client context
  */
 int doip_client_activate_routing(DoIPClient_t *tp) {
     if (tp->state != DOIP_STATE_CONNECTED) {
@@ -4210,14 +4250,14 @@ int doip_client_activate_routing(DoIPClient_t *tp) {
 }
 
 /**
- * @brief Send diagnostic message
+ * @brief Send diagnostic (UDS) message via DoIP. The UDS message is wrapped in a DoIP diagnostic
+ * message, consisting of a DoIP header and a diagnostic message header (source and target
+ * addresses).
+ * @param tp DoIP client context
+ * @param data Pointer to diagnostic message data. This is the UDS payload.
+ * @param len Length of diagnostic message data (of UDS payload)
  */
 ssize_t doip_client_send_diag_message(DoIPClient_t *tp, const uint8_t *data, size_t len) {
-    // if (tp->state != DOIP_STATE_READY_FOR_DIAG_REQUEST) {
-    //     UDS_LOGE(__FILE__, "DoIP: Routing not activated, state=%d", tp->state);
-    //     return -1;
-    // }
-
     /* Build diagnostic message payload */
     uint8_t payload[DOIP_BUFFER_SIZE];
     if (len + 4 > DOIP_BUFFER_SIZE) {
@@ -4227,6 +4267,7 @@ ssize_t doip_client_send_diag_message(DoIPClient_t *tp, const uint8_t *data, siz
 
     doip_change_state(tp, DOIP_STATE_DIAG_MESSAGE_SEND_PENDING);
 
+    /* Add diagnostic message header (source and target addresses) */
     payload[0] = (tp->source_address >> 8) & 0xFF;
     payload[1] = tp->source_address & 0xFF;
     payload[2] = (tp->target_address >> 8) & 0xFF;
@@ -4243,10 +4284,9 @@ ssize_t doip_client_send_diag_message(DoIPClient_t *tp, const uint8_t *data, siz
         return -1;
     }
 
+    /* Wait for ACK/NACK of DoIP server*/
     doip_change_state(tp, DOIP_STATE_DIAG_MESSAGE_ACK_PENDING);
-
-    /* Wait for ACK/NACK */
-    int timeout_ms = 1000; /* 1 second for ACK */
+    int timeout_ms = DOIP_ACK_TIMEOUT_MS; /* 1 second for ACK */
     clock_t start = clock();
 
     while (!tp->diag_ack_received && !tp->diag_nack_received) {
@@ -4263,8 +4303,9 @@ ssize_t doip_client_send_diag_message(DoIPClient_t *tp, const uint8_t *data, siz
         }
     }
 
+    // NACK received -> report error and fall back to idle state
     if (tp->diag_nack_received) {
-        doip_change_state(tp, DOIP_STATE_READY_FOR_DIAG_REQUEST); /* Reset state */
+        doip_change_state(tp, DOIP_STATE_READY_FOR_DIAG_REQUEST);
         UDS_LOGE(__FILE__, "DoIP: Diagnostic message rejected (NACK code=0x%02X)",
                  tp->diag_nack_code);
         return -1;
@@ -4276,7 +4317,9 @@ ssize_t doip_client_send_diag_message(DoIPClient_t *tp, const uint8_t *data, siz
 }
 
 /**
- * @brief Process DoIP client events (call periodically)
+ * @brief Process DoIP client events (call periodically).
+ * @param tp DoIP client context
+ * @param timeout_ms Timeout in milliseconds for receiving data
  */
 void doip_client_process(DoIPClient_t *tp, int timeout_ms) {
     if (tp->state == DOIP_STATE_READY_FOR_DIAG_REQUEST) {
@@ -4286,6 +4329,7 @@ void doip_client_process(DoIPClient_t *tp, int timeout_ms) {
 
 /**
  * @brief Disconnect from DoIP server
+ * @param tp DoIP client context
  */
 void doip_client_disconnect(DoIPClient_t *tp) {
     if (tp->socket_fd >= 0) {
@@ -4298,8 +4342,38 @@ void doip_client_disconnect(DoIPClient_t *tp) {
     UDS_LOGI(__FILE__, "DoIP Client: Disconnected");
 }
 
-////  FUNCTIONS FOR UDS INTERFACE ////
+/**
+ * @brief Populates SDU info structure for DoIP transport layer.
+ *
+ * @param hdl Handle to DoIP transport layer
+ * @param info Pointer to SDU info structure to populate
+ */
+void doip_update_sdu_info(const UDSTp_t *hdl, UDSSDU_t *info) {
+    if (NULL == info || NULL == hdl) {
+        return;
+    }
 
+    DoIPClient_t *impl = (DoIPClient_t *)hdl;
+    info->A_Mtype = UDS_A_MTYPE_DIAG;
+    info->A_SA = impl->source_address;
+    info->A_TA = impl->target_address;
+    info->A_TA_Type = UDS_A_TA_TYPE_PHYSICAL;
+    info->A_AE = UDS_TP_NOOP_ADDR;
+}
+
+/* --------------------------------------------------------------------------------
+ * UDS Transport Layer Interface Functions (send, recv, poll)
+ * -------------------------------------------------------------------------------- */
+
+/**
+ * @brief Send UDS message via DoIP transport layer.
+ *
+ * @param hdl Handle to DoIP transport layer
+ * @param buf Pointer to buffer containing UDS message
+ * @param len Length of UDS message
+ * @param info Pointer to SDU info structure (optional)
+ * @return ssize_t Number of bytes sent, or negative on error
+ */
 static ssize_t doip_tp_send(UDSTp_t *hdl, uint8_t *buf, size_t len, UDSSDU_t *info) {
     UDS_ASSERT(hdl);
     ssize_t ret = -1;
@@ -4312,9 +4386,21 @@ static ssize_t doip_tp_send(UDSTp_t *hdl, uint8_t *buf, size_t len, UDSSDU_t *in
         UDS_LOG_SDU(__FILE__, buf, len, info);
         UDS_LOGD(__FILE__, "DoIP TP Send: Sent %zd bytes", ret);
     }
+
+    // Populate SDU info if provided (physical addressing semantics on DoIP)
+    doip_update_sdu_info(hdl, info);
     return ret;
 }
 
+/**
+ * @brief Receive UDS message via DoIP transport layer.
+ *
+ * @param hdl Handle to DoIP transport layer
+ * @param buf Pointer to buffer to store received UDS message
+ * @param bufsize Size of the buffer
+ * @param info Pointer to SDU info structure (optional)
+ * @return ssize_t Number of bytes received, or negative on error
+ */
 static ssize_t doip_tp_recv(UDSTp_t *hdl, uint8_t *buf, size_t bufsize, UDSSDU_t *info) {
     UDS_ASSERT(hdl);
     UDS_ASSERT(buf);
@@ -4336,16 +4422,8 @@ static ssize_t doip_tp_recv(UDSTp_t *hdl, uint8_t *buf, size_t bufsize, UDSSDU_t
         doip_change_state(impl, DOIP_STATE_READY_FOR_DIAG_REQUEST);
 
         // Populate SDU info if provided (physical addressing semantics on DoIP)
-        if (info) {
-            info->A_Mtype = UDS_A_MTYPE_DIAG;
-            info->A_SA = impl->source_address;
-            info->A_TA = impl->target_address;
-            info->A_TA_Type = UDS_A_TA_TYPE_PHYSICAL;
-            info->A_AE = UDS_TP_NOOP_ADDR;
-        }
-
+        doip_update_sdu_info(hdl, info);
         UDS_LOG_SDU(__FILE__, buf, n, info);
-        // remove DoIP and diag headers from count
         return (ssize_t)n;
     }
 
@@ -4369,6 +4447,7 @@ static UDSTpStatus_t doip_tp_poll(UDSTp_t *hdl) {
 
     // Pump the socket to process incoming data without blocking
     ssize_t rc = doip_receive_data(impl, 0);
+    UDS_LOGV(__FILE__, "DoIP TP Poll: after receive_data rc=%zd", rc);
 
     if (impl->state == DOIP_STATE_READY_FOR_DIAG_REQUEST) {
         status |= UDS_TP_IDLE;
@@ -4380,8 +4459,6 @@ static UDSTpStatus_t doip_tp_poll(UDSTp_t *hdl) {
         return status;
     }
 
-    //UDS_LOGV(__FILE__, "DoIP TP Poll: after receive_data rc=%zd", rc);
-
     if (impl->state == DOIP_STATE_DIAG_MESSAGE_ACK_PENDING) {
         // 1) If waiting for ACK/NACK, mark send in progress until one arrives.
         if (!impl->diag_ack_received && !impl->diag_nack_received) {
@@ -4392,7 +4469,6 @@ static UDSTpStatus_t doip_tp_poll(UDSTp_t *hdl) {
             // ACK received; now expect diagnostic response
             status |= UDS_TP_SEND_IN_PROGRESS;
         }
-        //doip_log_poll_state(status, "Ack pending");
         return status;
     }
 
@@ -4404,19 +4480,17 @@ static UDSTpStatus_t doip_tp_poll(UDSTp_t *hdl) {
         } else {
             status |= UDS_TP_SEND_IN_PROGRESS; // still waiting on response
         }
-        //doip_log_poll_state(status, "Response pending");
         return status;
     }
 
     // Any other state is considered an error for transport purposes
     status |= UDS_TP_ERR;
-    //doip_log_poll_state(status, "Unknown/error state");
     return status;
 }
 
 UDSErr_t UDSDoIPInitClient(DoIPClient_t *tp, const char *ipaddress, uint16_t port,
                            uint16_t source_addr, uint16_t target_addr) {
-    if (!tp || !ipaddress) {
+    if (tp == NULL || ipaddress == NULL) {
         return UDS_ERR_INVALID_ARG;
     }
 
@@ -4450,7 +4524,7 @@ UDSErr_t UDSDoIPInitClient(DoIPClient_t *tp, const char *ipaddress, uint16_t por
 }
 
 UDSErr_t UDSDoIPActivateRouting(DoIPClient_t *tp) {
-    if (!tp) {
+    if (tp == NULL) {
         return UDS_ERR_INVALID_ARG;
     }
 
@@ -4462,7 +4536,7 @@ UDSErr_t UDSDoIPActivateRouting(DoIPClient_t *tp) {
 }
 
 void UDSDoIPDeinit(DoIPClient_t *tp) {
-    if (!tp) {
+    if (tp == NULL) {
         return;
     }
 

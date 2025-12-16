@@ -188,7 +188,7 @@ static void doip_handle_routing_activation(DoIPClientConnection_t *client,
 
     doip_send_message(client, DOIP_PAYLOAD_TYPE_ROUTING_ACTIVATION_RES, response, 13);
 
-    printf("DoIP: Routing activated for SA=0x%04X\n", source_address);
+    printf("DoIP-server: Routing activated for SA=0x%04X\n", source_address);
 }
 
 /**
@@ -235,7 +235,7 @@ static void doip_handle_diag_message(DoIPClientConnection_t *client,
         nack[3] = target_address & 0xFF;
         nack[4] = DOIP_DIAG_NACK_UNKNOWN_TA;
         doip_send_message(client, DOIP_PAYLOAD_TYPE_DIAG_MESSAGE_NEG_ACK, nack, 5);
-        printf("DoIP: Diagnostic message with unknown TA=0x%04X, expected 0x%04X\n", target_address, server.logical_address);
+        printf("DoIP-server: Diagnostic message with unknown TA=0x%04X, expected 0x%04X\n", target_address, server.logical_address);
         return;
     }
 
@@ -262,7 +262,7 @@ static void doip_handle_diag_message(DoIPClientConnection_t *client,
 static void doip_process_message(DoIPClientConnection_t *client,
                                 const DoIPHeader_t *header,
                                 const uint8_t *payload) {
-    printf("DoIP: Received payload type 0x%04X\n", header->payload_type);
+    printf("DoIP-server: Received payload type 0x%04X\n", header->payload_type);
     switch (header->payload_type) {
         case DOIP_PAYLOAD_TYPE_ROUTING_ACTIVATION_REQ:
             doip_handle_routing_activation(client, payload, header->payload_length);
@@ -277,7 +277,7 @@ static void doip_process_message(DoIPClientConnection_t *client,
             break;
 
         default:
-            printf("DoIP: Unknown payload type 0x%04X\n", header->payload_type);
+            printf("DoIP-server: Unknown payload type 0x%04X\n", header->payload_type);
             break;
     }
 }
@@ -292,7 +292,7 @@ static void doip_handle_client_rx(DoIPClientConnection_t *client) {
 
     if (bytes_read <= 0) {
         if (bytes_read == 0) {
-            printf("DoIP: Client disconnected\n");
+            printf("DoIP-server: Client disconnected\n");
         } else {
             perror("recv");
         }
@@ -308,7 +308,7 @@ static void doip_handle_client_rx(DoIPClientConnection_t *client) {
     while (client->rx_offset >= DOIP_HEADER_SIZE) {
         DoIPHeader_t header;
         if (!doip_header_parse(client->rx_buffer, &header)) {
-            printf("DoIP: Invalid header\n");
+            printf("DoIP-server: Invalid header\n");
             close(client->socket_fd);
             client->active = false;
             return;
@@ -410,7 +410,7 @@ static void doip_accept_connection(void) {
     }
 
     if (!client) {
-        printf("DoIP: Max clients reached, rejecting connection\n");
+        printf("DoIP-server: Max clients reached, rejecting connection\n");
         close(client_fd);
         return;
     }
@@ -421,7 +421,7 @@ static void doip_accept_connection(void) {
     client->active = true;
     client->routing_activated = false;
 
-    printf("DoIP: Client connected from %s:%d\n",
+    printf("DoIP-server: Client connected from %s:%d\n",
            inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 }
 
@@ -442,7 +442,7 @@ int doip_server_send_diag_response(uint16_t source_address,
     }
 
     if (!client) {
-        printf("DoIP: No active client with SA=0x%04X\n", source_address);
+        printf("DoIP-server: No active client with SA=0x%04X\n", source_address);
         return -1;
     }
 
