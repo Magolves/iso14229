@@ -63,7 +63,23 @@ void on_diagnostic_message(uint16_t source_addr, const uint8_t *data, size_t len
         /* Send response */
         doip_server_send_diag_response(source_addr, response, 7);
         printf("Sent positive response\n");
+    } else
+    /* Example: Handle WriteDataByIdentifier (0x2E) */
+    if (len >= 4 && data[0] == 0x2E) {
+        uint16_t did = (data[1] << 8) | data[2];
+        printf("Service: WriteDataByIdentifier (DID=0x%04X)\n", did);
+
+        /* Build positive response */
+        uint8_t response[10];
+        response[0] = 0x6E;  /* Positive response (0x2E + 0x40) */
+        response[1] = data[1];
+        response[2] = data[2];
+
+        /* Send response */
+        doip_server_send_diag_response(source_addr, response, 7);
+        printf("Sent positive response\n");
     }
+
     /* Example: Handle DiagnosticSessionControl (0x10) */
     else if (len >= 2 && data[0] == 0x10) {
         uint8_t session_type = data[1];
