@@ -221,7 +221,7 @@ static void doip_handle_routing_activation_response(DoIPClient_t *tp, const uint
  * @param payload Pointer to DoIP payload
  * @param payload_len Length of DoIP payload
  */
-static void doip_handle_alive_check_request(DoIPClient_t *tp, const uint8_t *payload,
+static void doip_handle_alive_check_request(const DoIPClient_t *tp, const uint8_t *payload,
                                             uint32_t payload_len) {
 
     (void)tp;
@@ -633,7 +633,7 @@ void doip_update_sdu_info(const UDSTp_t *hdl, UDSSDU_t *info) {
         return;
     }
 
-    const DoIPClient_t *impl = (DoIPClient_t *)hdl;
+    const DoIPClient_t *impl = (const DoIPClient_t *)hdl;
     info->A_Mtype = UDS_A_MTYPE_DIAG;
     info->A_SA = impl->source_address;
     info->A_TA = impl->target_address;
@@ -654,6 +654,8 @@ void doip_update_sdu_info(const UDSTp_t *hdl, UDSSDU_t *info) {
  * @param info Pointer to SDU info structure (optional)
  * @return ssize_t Number of bytes sent, or negative on error
  */
+
+/* NOTE: SonarCube complains about missing const, but the interface requires non-const */
 static ssize_t doip_tp_send(UDSTp_t *hdl, uint8_t *buf, size_t len, UDSSDU_t *info) {
     UDS_ASSERT(hdl);
     ssize_t ret = -1;
