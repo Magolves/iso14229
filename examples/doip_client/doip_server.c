@@ -92,7 +92,7 @@ typedef struct {
 } DoIPServer_t;
 
 /* Static server instance */
-static DoIPServer_t g_server = {0};
+static DoIPServer_t server = {0};
 
 /**
  * @brief Create and initialize DoIP header
@@ -169,8 +169,8 @@ static void doip_handle_routing_activation(DoIPClientConnection_t *client,
     uint8_t response[13];
     response[0] = (source_address >> 8) & 0xFF;      /* Client source address */
     response[1] = source_address & 0xFF;
-    response[2] = (g_server.logical_address >> 8) & 0xFF;  /* Server logical address */
-    response[3] = g_server.logical_address & 0xFF;
+    response[2] = (server.logical_address >> 8) & 0xFF;  /* Server logical address */
+    response[3] = server.logical_address & 0xFF;
     response[4] = DOIP_ROUTING_ACTIVATION_RES_SUCCESS;     /* Response code */
     response[5] = 0x00;  /* Reserved */
     response[6] = 0x00;
@@ -188,7 +188,7 @@ static void doip_handle_routing_activation(DoIPClientConnection_t *client,
 
     doip_send_message(client, DOIP_PAYLOAD_TYPE_ROUTING_ACTIVATION_RES, response, 13);
 
-    printf("DoIP: Routing activated for SA=0x%04X\n", source_address);
+    printf("DoIP-server: Routing activated for SA=0x%04X\n", source_address);
 }
 
 /**
@@ -196,8 +196,8 @@ static void doip_handle_routing_activation(DoIPClientConnection_t *client,
  */
 static void doip_handle_alive_check(DoIPClientConnection_t *client) {
     uint8_t response[2];
-    response[0] = (g_server.logical_address >> 8) & 0xFF;
-    response[1] = g_server.logical_address & 0xFF;
+    response[0] = (server.logical_address >> 8) & 0xFF;
+    response[1] = server.logical_address & 0xFF;
 
     doip_send_message(client, DOIP_PAYLOAD_TYPE_ALIVE_CHECK_RES, response, 2);
 }
@@ -212,8 +212,8 @@ static void doip_handle_diag_message(DoIPClientConnection_t *client,
         uint8_t nack[5] = {0};
         nack[0] = (client->source_address >> 8) & 0xFF;
         nack[1] = client->source_address & 0xFF;
-        nack[2] = (g_server.logical_address >> 8) & 0xFF;
-        nack[3] = g_server.logical_address & 0xFF;
+        nack[2] = (server.logical_address >> 8) & 0xFF;
+        nack[3] = server.logical_address & 0xFF;
         nack[4] = DOIP_DIAG_NACK_TARGET_UNREACHABLE;
         doip_send_message(client, DOIP_PAYLOAD_TYPE_DIAG_MESSAGE_NEG_ACK, nack, 5);
         return;
@@ -227,7 +227,7 @@ static void doip_handle_diag_message(DoIPClientConnection_t *client,
     uint16_t target_address = (payload[2] << 8) | payload[3];
 
     /* Verify target address matches our logical address */
-    if (target_address != g_server.logical_address) {
+    if (target_address != server.logical_address) {
         uint8_t nack[5];
         nack[0] = (source_address >> 8) & 0xFF;
         nack[1] = source_address & 0xFF;
@@ -235,7 +235,7 @@ static void doip_handle_diag_message(DoIPClientConnection_t *client,
         nack[3] = target_address & 0xFF;
         nack[4] = DOIP_DIAG_NACK_UNKNOWN_TA;
         doip_send_message(client, DOIP_PAYLOAD_TYPE_DIAG_MESSAGE_NEG_ACK, nack, 5);
-        printf("DoIP: Diagnostic message with unknown TA=0x%04X, expected 0x%04X\n", target_address, g_server.logical_address);
+        printf("DoIP-server: Diagnostic message with unknown TA=0x%04X, expected 0x%04X\n", target_address, server.logical_address);
         return;
     }
 
@@ -249,10 +249,10 @@ static void doip_handle_diag_message(DoIPClientConnection_t *client,
     doip_send_message(client, DOIP_PAYLOAD_TYPE_DIAG_MESSAGE_POS_ACK, ack, 5);
 
     /* Pass UDS data to application callback */
-    if (g_server.on_diag_message && payload_len > 4) {
+    if (server.on_diag_message && payload_len > 4) {
         const uint8_t *uds_data = payload + 4;
         size_t uds_len = payload_len - 4;
-        g_server.on_diag_message(source_address, uds_data, uds_len);
+        server.on_diag_message(source_address, uds_data, uds_len);
     }
 }
 
@@ -262,7 +262,7 @@ static void doip_handle_diag_message(DoIPClientConnection_t *client,
 static void doip_process_message(DoIPClientConnection_t *client,
                                 const DoIPHeader_t *header,
                                 const uint8_t *payload) {
-    printf("DoIP: Received payload type 0x%04X\n", header->payload_type);
+    printf("DoIP-server: Received payload type 0x%04X\n", header->payload_type);
     switch (header->payload_type) {
         case DOIP_PAYLOAD_TYPE_ROUTING_ACTIVATION_REQ:
             doip_handle_routing_activation(client, payload, header->payload_length);
@@ -277,7 +277,7 @@ static void doip_process_message(DoIPClientConnection_t *client,
             break;
 
         default:
-            printf("DoIP: Unknown payload type 0x%04X\n", header->payload_type);
+            printf("DoIP-server: Unknown payload type 0x%04X\n", header->payload_type);
             break;
     }
 }
@@ -292,7 +292,7 @@ static void doip_handle_client_rx(DoIPClientConnection_t *client) {
 
     if (bytes_read <= 0) {
         if (bytes_read == 0) {
-            printf("DoIP: Client disconnected\n");
+            printf("DoIP-server: Client disconnected\n");
         } else {
             perror("recv");
         }
@@ -308,7 +308,7 @@ static void doip_handle_client_rx(DoIPClientConnection_t *client) {
     while (client->rx_offset >= DOIP_HEADER_SIZE) {
         DoIPHeader_t header;
         if (!doip_header_parse(client->rx_buffer, &header)) {
-            printf("DoIP: Invalid header\n");
+            printf("DoIP-server: Invalid header\n");
             close(client->socket_fd);
             client->active = false;
             return;
@@ -340,23 +340,23 @@ static void doip_handle_client_rx(DoIPClientConnection_t *client) {
  */
 int doip_server_init(uint16_t logical_address,
                      void (*diag_msg_callback)(uint16_t, const uint8_t*, size_t)) {
-    memset(&g_server, 0, sizeof(DoIPServer_t));
+    memset(&server, 0, sizeof(DoIPServer_t));
 
-    g_server.logical_address = logical_address;
-    g_server.on_diag_message = diag_msg_callback;
+    server.logical_address = logical_address;
+    server.on_diag_message = diag_msg_callback;
 
     /* Create TCP socket */
-    g_server.listen_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (g_server.listen_socket < 0) {
+    server.listen_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server.listen_socket < 0) {
         perror("socket");
         return -1;
     }
 
     /* Set socket options */
     int opt = 1;
-    if (setsockopt(g_server.listen_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+    if (setsockopt(server.listen_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
         perror("setsockopt");
-        close(g_server.listen_socket);
+        close(server.listen_socket);
         return -1;
     }
 
@@ -367,16 +367,16 @@ int doip_server_init(uint16_t logical_address,
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(DOIP_TCP_PORT);
 
-    if (bind(g_server.listen_socket, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    if (bind(server.listen_socket, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("bind");
-        close(g_server.listen_socket);
+        close(server.listen_socket);
         return -1;
     }
 
     /* Listen for connections */
-    if (listen(g_server.listen_socket, DOIP_MAX_CLIENTS) < 0) {
+    if (listen(server.listen_socket, DOIP_MAX_CLIENTS) < 0) {
         perror("listen");
-        close(g_server.listen_socket);
+        close(server.listen_socket);
         return -1;
     }
 
@@ -393,7 +393,7 @@ static void doip_accept_connection(void) {
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
 
-    int client_fd = accept(g_server.listen_socket,
+    int client_fd = accept(server.listen_socket,
                           (struct sockaddr *)&client_addr, &addr_len);
     if (client_fd < 0) {
         perror("accept");
@@ -403,14 +403,14 @@ static void doip_accept_connection(void) {
     /* Find free client slot */
     DoIPClientConnection_t *client = NULL;
     for (int i = 0; i < DOIP_MAX_CLIENTS; i++) {
-        if (!g_server.clients[i].active) {
-            client = &g_server.clients[i];
+        if (!server.clients[i].active) {
+            client = &server.clients[i];
             break;
         }
     }
 
     if (!client) {
-        printf("DoIP: Max clients reached, rejecting connection\n");
+        printf("DoIP-server: Max clients reached, rejecting connection\n");
         close(client_fd);
         return;
     }
@@ -421,7 +421,7 @@ static void doip_accept_connection(void) {
     client->active = true;
     client->routing_activated = false;
 
-    printf("DoIP: Client connected from %s:%d\n",
+    printf("DoIP-server: Client connected from %s:%d\n",
            inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 }
 
@@ -433,16 +433,16 @@ int doip_server_send_diag_response(uint16_t source_address,
     /* Find client with matching source address */
     DoIPClientConnection_t *client = NULL;
     for (int i = 0; i < DOIP_MAX_CLIENTS; i++) {
-        if (g_server.clients[i].active &&
-            g_server.clients[i].routing_activated &&
-            g_server.clients[i].source_address == source_address) {
-            client = &g_server.clients[i];
+        if (server.clients[i].active &&
+            server.clients[i].routing_activated &&
+            server.clients[i].source_address == source_address) {
+            client = &server.clients[i];
             break;
         }
     }
 
     if (!client) {
-        printf("DoIP: No active client with SA=0x%04X\n", source_address);
+        printf("DoIP-server: No active client with SA=0x%04X\n", source_address);
         return -1;
     }
 
@@ -452,8 +452,8 @@ int doip_server_send_diag_response(uint16_t source_address,
         return -1;
     }
 
-    payload[0] = (g_server.logical_address >> 8) & 0xFF;  /* Source address (server) */
-    payload[1] = g_server.logical_address & 0xFF;
+    payload[0] = (server.logical_address >> 8) & 0xFF;  /* Source address (server) */
+    payload[1] = server.logical_address & 0xFF;
     payload[2] = (source_address >> 8) & 0xFF;            /* Target address (client) */
     payload[3] = source_address & 0xFF;
     memcpy(payload + 4, data, len);
@@ -467,17 +467,17 @@ int doip_server_send_diag_response(uint16_t source_address,
 void doip_server_process(int timeout_ms) {
     fd_set readfds;
     struct timeval tv;
-    int max_fd = g_server.listen_socket;
+    int max_fd = server.listen_socket;
 
     FD_ZERO(&readfds);
-    FD_SET(g_server.listen_socket, &readfds);
+    FD_SET(server.listen_socket, &readfds);
 
     /* Add active client sockets */
     for (int i = 0; i < DOIP_MAX_CLIENTS; i++) {
-        if (g_server.clients[i].active) {
-            FD_SET(g_server.clients[i].socket_fd, &readfds);
-            if (g_server.clients[i].socket_fd > max_fd) {
-                max_fd = g_server.clients[i].socket_fd;
+        if (server.clients[i].active) {
+            FD_SET(server.clients[i].socket_fd, &readfds);
+            if (server.clients[i].socket_fd > max_fd) {
+                max_fd = server.clients[i].socket_fd;
             }
         }
     }
@@ -496,15 +496,15 @@ void doip_server_process(int timeout_ms) {
     }
 
     /* Check for new connections */
-    if (FD_ISSET(g_server.listen_socket, &readfds)) {
+    if (FD_ISSET(server.listen_socket, &readfds)) {
         doip_accept_connection();
     }
 
     /* Check client sockets */
     for (int i = 0; i < DOIP_MAX_CLIENTS; i++) {
-        if (g_server.clients[i].active &&
-            FD_ISSET(g_server.clients[i].socket_fd, &readfds)) {
-            doip_handle_client_rx(&g_server.clients[i]);
+        if (server.clients[i].active &&
+            FD_ISSET(server.clients[i].socket_fd, &readfds)) {
+            doip_handle_client_rx(&server.clients[i]);
         }
     }
 }
@@ -515,14 +515,14 @@ void doip_server_process(int timeout_ms) {
 void doip_server_shutdown(void) {
     /* Close all client connections */
     for (int i = 0; i < DOIP_MAX_CLIENTS; i++) {
-        if (g_server.clients[i].active) {
-            close(g_server.clients[i].socket_fd);
+        if (server.clients[i].active) {
+            close(server.clients[i].socket_fd);
         }
     }
 
     /* Close listen socket */
-    if (g_server.listen_socket >= 0) {
-        close(g_server.listen_socket);
+    if (server.listen_socket >= 0) {
+        close(server.listen_socket);
     }
 
     printf("DoIP Server: Shutdown complete\n");

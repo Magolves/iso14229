@@ -1,13 +1,21 @@
-SRCS += iso14229.c main.c
-HDRS += iso14229.h
-TARGET = doip_client
-CFLAGS = -DUDS_TP_DOIP=1 -DUDS_CONFIG_LOG_COLORS=1 -DUDS_LOG_LEVEL=UDS_LOG_DEBUG -g
+CLI_SRCS += iso14229.c doip_test_client.c
+CLI_HDRS += iso14229.h
+CLI_TARGET = doip_client
 
-all: $(SRCS) $(HDRS) doip_server.c
-	$(CC) $(CFLAGS) $(SRCS) -o $(TARGET)
+SVR_SRCS = doip_server.c doip_test_server.c
+SVR_TARGET = doip_server
 
-server: doip_server.c doip_example.c
-	$(CC) doip_server.c doip_example.c -o doip_server
+# Use the verbose log level for debugging
+# CFLAGS = -DUDS_TP_DOIP=1 -DUDS_CONFIG_LOG_COLORS=1 -DUDS_LOG_LEVEL=UDS_LOG_VERBOSE -g -Wall -Wpedantic -Wextra
+CFLAGS = -DUDS_TP_DOIP=1 -DUDS_CONFIG_LOG_COLORS=1 -DUDS_LOG_LEVEL=UDS_LOG_INFO -g -Wall -Wpedantic -Wextra
+
+all: client server
+
+client: $(CLI_SRCS) $(CLI_HDRS)
+	$(CC) $(CFLAGS) $(CLI_SRCS) -o $(CLI_TARGET)
+
+server: $(SVR_SRCS)
+	$(CC) $(CFLAGS) $(SVR_SRCS) -o $(SVR_TARGET)
 
 clean:
-	rm -f $(TARGET) doip_server
+	rm -f $(CLI_TARGET) $(SVR_TARGET)

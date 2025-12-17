@@ -36,3 +36,58 @@ Then you should be able to run `make` in the root dir
 ```bash
 make
 ```
+
+## Return values of TP functions
+
+- recv:
+  - 0: response pending
+  - < 0: error
+  - n: message received
+
+- send:
+  - 0: send pending
+  - < 0: error
+  - n: message sent
+
+- poll: one of
+    UDS_TP_IDLE = 0x0000, // ready to send/recv
+    UDS_TP_SEND_IN_PROGRESS = 0x0001,// sending not complete
+
+    UDS_TP_RECV_COMPLETE = 0x0002,// recv finished (not used/needed?)
+    UDS_TP_ERR = 0x0004,
+
+
+```C
+tp_status = UDSTpPoll(client->tp);
+err = UDS_OK;
+switch (client->state) {
+    case STATE_IDLE:
+        // reset options...
+        break;
+    case STATE_SENDING: {
+        // tp_recv must return 0
+        // rx buffer cleared
+        // tp_send must return either
+        // > 0:
+        //  number of sent bytes is
+        //   a) equal to expected bytes -> STATE_AWAIT_SEND_COMPLETE
+        //.  b) not equal to expected bytes -> err = UDS_ERR_BUFSIZ
+        // 0: send pending
+        // < 0: ERROR = UDS_ERR_TPORT
+        break;
+    }
+    case STATE_AWAIT_SEND_COMPLETE: {
+        // tp_status = UDS_TP_SEND_IN_PROGRESS  -> exit UDS_OK
+        // -> STATE_AWAIT_RESPONSE
+        // start p2 timer
+        break;
+    }
+    case STATE_AWAIT_RESPONSE: {
+        // tp_recv must return either
+        // < 0: error = UDS_ERR_TPORT, -> STATE_IDLE
+        // = 0: continue receive unless p2 expired
+        // > 0: number of received bytes, server checks response
+        //  a) OK -> forward to client app
+        //  b) exit with error
+        break;
+    }
